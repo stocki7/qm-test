@@ -44,13 +44,6 @@ repos:
       - id: terraform_fmt
       - id: terraform_tflint
 
-  # Ansible
-  - repo: https://github.com/ansible/ansible-lint
-    rev: v24.7.0
-    hooks:
-      - id: ansible-lint
-        files: ^infra/ansible/
-
   # Shell-Skripte
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1

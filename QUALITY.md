@@ -37,7 +37,6 @@ Lokal per `pre-commit`, zusätzlich in der CI (`.github/workflows/quality.yml`):
 | pre-commit-hooks | Whitespace, Zeilenenden, YAML/JSON-Syntax, große Dateien, private Keys |
 | hadolint | Dockerfiles |
 | terraform fmt / tflint | Terraform-Code (IaC) |
-| ansible-lint | Ansible-Playbooks |
 | shellcheck | Shell-Skripte |
 | conventional-pre-commit | Format der Commit-Message |
 

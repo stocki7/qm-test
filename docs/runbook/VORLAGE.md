@@ -10,7 +10,7 @@
 
 ## Voraussetzungen
 - Zugänge (CloudStack-Account, SSH-Key, Secrets aus …)
-- Werkzeuge (Terraform x.y, Ansible, …)
+- Werkzeuge (Terraform x.y, Docker, …)
 
 ## Ablauf
 1. …

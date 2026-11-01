@@ -1,0 +1,55 @@
+# Terraform: Prüfung bei jedem PR, Plan/Apply nur manuell und mit Freigabe.
+name: infra
+
+on:
+  pull_request:
+    paths: ["infra/terraform/**"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, production]
+        required: true
+      action:
+        type: choice
+        options: [plan, apply]
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [staging, prod]
+    defaults:
+      run:
+        working-directory: infra/terraform/envs/${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  plan-apply:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.DEPLOY_RUNNER || 'ubuntu-latest' }}
+    environment: ${{ inputs.environment }}
+    env:
+      # Ordnername: staging | prod
+      TF_DIR: infra/terraform/envs/${{ inputs.environment == 'production' && 'prod' || 'staging' }}
+      CLOUDSTACK_API_URL: ${{ vars.CLOUDSTACK_API_URL }}
+      CLOUDSTACK_API_KEY: ${{ secrets.CLOUDSTACK_API_KEY }}
+      CLOUDSTACK_SECRET_KEY: ${{ secrets.CLOUDSTACK_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      # TODO: Remote-Backend für den State festlegen (ADR!) und hier konfigurieren
+      - run: terraform -chdir="$TF_DIR" init
+      - run: terraform -chdir="$TF_DIR" plan -out=tfplan
+      - if: inputs.action == 'apply'
+        run: terraform -chdir="$TF_DIR" apply -auto-approve tfplan

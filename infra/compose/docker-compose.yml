@@ -1,0 +1,16 @@
+# Wird von .github/workflows/deploy.yml auf die VM kopiert.
+# IMAGE und IMAGE_TAG setzt die Pipeline. Laufzeit-Secrets liegen in /opt/labyrinth/.env auf der VM (nicht im Repo).
+services:
+  server:
+    image: ${IMAGE}:${IMAGE_TAG}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false   # benötigt Docker Compose ≥ 2.24
+    ports:
+      - "8080:8080"   # TODO: Port des Labyrinth-Servers; öffentlich nur über Reverse Proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]   # TODO: Health-Endpoint
+      interval: 15s
+      timeout: 5s
+      retries: 3

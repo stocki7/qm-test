@@ -1,0 +1,78 @@
+# Wiederverwendbarer Deploy-Job – wird von pipeline.yml aufgerufen.
+# Manuell startbar (Actions → deploy → Run workflow) für Rollback auf einen älteren Tag.
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment: { type: string, required: true }
+      image: { type: string, required: true }
+      tag: { type: string, required: true }
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, production]
+        required: true
+      image:
+        type: string
+        required: true
+        description: "z. B. ghcr.io/<org>/<repo>/labyrinth-server"
+      tag:
+        type: string
+        required: true
+        description: "Git-SHA (12 Zeichen) der Version, auf die zurückgerollt wird"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    # Erreichen GitHub-Runner die CloudStack-VMs nicht (kein öffentlicher SSH-Zugang),
+    # Repository-Variable DEPLOY_RUNNER=self-hosted setzen und einen Runner in CloudStack betreiben.
+    runs-on: ${{ vars.DEPLOY_RUNNER || 'ubuntu-latest' }}
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      SSH_TARGET: ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}
+      DEPLOY_DIR: /opt/labyrinth
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH einrichten
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf 'Host *\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking yes\n' > ~/.ssh/config
+
+      - name: Compose-Datei übertragen
+        run: |
+          ssh "$SSH_TARGET" "mkdir -p $DEPLOY_DIR"
+          scp infra/compose/docker-compose.yml "$SSH_TARGET:$DEPLOY_DIR/docker-compose.yml"
+
+      - name: Neue Version starten
+        run: |
+          echo "${{ github.token }}" | ssh "$SSH_TARGET" "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          ssh "$SSH_TARGET" "cd $DEPLOY_DIR && \
+            export IMAGE='${{ inputs.image }}' IMAGE_TAG='${{ inputs.tag }}' && \
+            docker compose pull && docker compose up -d --remove-orphans && \
+            echo '${{ inputs.tag }}' > DEPLOYED_VERSION"
+          ssh "$SSH_TARGET" "docker logout ghcr.io"
+
+      - name: Smoke-Test (Health-Endpoint)
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 5 "${{ vars.HEALTH_URL }}"; then echo " → OK"; exit 0; fi
+            echo "Versuch $i fehlgeschlagen, warte 6 s …"; sleep 6
+          done
+          echo "Smoke-Test fehlgeschlagen – Rollback: deploy-Workflow manuell mit vorherigem Tag starten"
+          exit 1
+
+      - name: SSH-Key entfernen
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
